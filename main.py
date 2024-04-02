@@ -1,51 +1,56 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional
 
 app = FastAPI()
 
-# Mocked Kafka events
-mocked_events = [
-    {"table": "X", "product": "Product A", "timestamp": datetime.now().isoformat()}
-]
+# Placeholder storage for rulesets
+rulesets: Dict[str, List[Dict[str, Dict]]] = {}
 
-# Ruleset storage
-rulesets: Dict[str, List[Dict[str, Any]]] = {}
+# Pydantic models for request body validation
+class ProcessIdentifier(BaseModel):
+    type: str
+    identifier: str
 
-class RuleSet(BaseModel):
-    product: str
-    depends_on_table: str
-    depends_on_product: str
-    cooldown_hours: int
-    last_triggered: datetime = datetime.min
+class SourceIdentifier(BaseModel):
+    type: str
+    identifier: str
+
+class FreshnessCriteria(BaseModel):
+    businessDataFreshnessMinutes: Optional[int] = Field(None, ge=0)
+    technicalDataFreshnessMinutes: Optional[int] = Field(None, ge=0)
+    jobExecutionFreshnessMinutes: Optional[int] = Field(None, ge=0)
+
+class Criteria(BaseModel):
+    eventType: str
+    freshnessCriteria: FreshnessCriteria
+    details: dict
+
+class Dependency(BaseModel):
+    dependencyType: str
+    sourceIdentifier: SourceIdentifier
+    criteria: Criteria
+
+class RuleSetRegistration(BaseModel):
+    processIdentifier: ProcessIdentifier
+    dependencies: List[Dependency]
 
 @app.post("/register_ruleset/")
-async def register_ruleset(ruleset: RuleSet):
-    if ruleset.product not in rulesets:
-        rulesets[ruleset.product] = []
-    rulesets[ruleset.product].append(ruleset.dict())
+async def register_ruleset(ruleset: RuleSetRegistration):
+    # Convert process identifier to a unique key
+    process_key = f"{ruleset.processIdentifier.type}:{ruleset.processIdentifier.identifier}"
+    # Ensure a list exists for this key
+    if process_key not in rulesets:
+        rulesets[process_key] = []
+    # Append the new ruleset
+    rulesets[process_key].append(ruleset.dict())
     return {"message": "Ruleset registered successfully"}
 
-def evaluate_rulesets():
-    now = datetime.now()
-    for product, product_rulesets in rulesets.items():
-        for ruleset in product_rulesets:
-            if now - ruleset['last_triggered'] < timedelta(hours=ruleset['cooldown_hours']):
-                continue  # Skip evaluation if within cooldown period
-            for event in mocked_events:
-                if event["product"] == ruleset["depends_on_product"] and event["table"] == ruleset["depends_on_table"]:
-                    trigger_workflow(product, ruleset)
-                    ruleset['last_triggered'] = now  # Update last triggered time
-
-def trigger_workflow(product: str, ruleset: Dict[str, Any]):
-    # Placeholder for triggering a workflow
-    print(f"Triggering workflow for {product} based on ruleset {ruleset}")
-
+# Placeholder endpoint for rule evaluation
 @app.get("/evaluate/")
 async def evaluate():
-    evaluate_rulesets()
-    return {"message": "Evaluation complete"}
+    # Logic for evaluating rules against incoming events would go here
+    return {"message": "Evaluation triggered"}
 
 if __name__ == "__main__":
     import uvicorn
